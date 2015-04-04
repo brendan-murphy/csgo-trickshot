@@ -12,8 +12,10 @@ public Plugin:myinfo = {
 }
 
 int currentThrower = 0;
+float roundTime = 0.0;
 
 public OnPluginStart(){
+
 	RegAdminCmd("sm_myslap", Command_MySlap, ADMFLAG_SLAY);
 	RegAdminCmd("send_to_team",Command_SendToTeam, ADMFLAG_SLAY);
 
@@ -25,6 +27,16 @@ public OnPluginStart(){
 
 public OnPluginEnd(){
 
+}
+
+public OnClientConnected(client){
+
+}
+
+public OnClientDisconnect_Post(client){
+	if(client <= currentThrower){
+		currentThrower--;
+	}
 }
 
 public OnMapStart(){
@@ -48,10 +60,21 @@ public Action Event_OnRoundPreStart(Handle event, const char[] name, bool dontBr
 		currentThrower = 1;
 
 	CS_SwitchTeam(currentThrower, 3);
+
+	// hook hoop trigger event
+	new String:buffer[60], ent = -1;
+	while((ent = FindEntityByClassname(ent, "trigger_multiple")) != -1){
+
+		GetEntPropString(ent, Prop_Data, "m_iName", buffer, sizeof(buffer));
+		if(StrContains(buffer, "hoop_trigger", false)){
+			HookSingleEntityOutput(ent, "OnTrigger", HoopOnTrigger, false);
+		}
+
+	}
 }
 
 public Action Event_OnRoundPostStart(Handle event, const char[] name, bool dontBroadcast){
-	
+	CreateTimer(GetConVarFloat(FindConVar("mp_roundtime_defuse")) * 60, RoundTimeExpire);
 }
 
 public Action Event_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast){
@@ -83,6 +106,16 @@ public Action Command_SendToTeam(client, args){
 
 	return Plugin_Handled;
 }
+
+public HoopOnTrigger(const String:output[], caller, activator, float delay){
+	PrintToServer("output %s, caller %i, activator %i, delay %0.1f", output, caller, activator, delay);
+	CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_CTWin);
+}
+
+public RoundTimeExpire(){
+
+}
+
 
 public Action Command_MySlap(client, args){
 	new String:arg1[32], String:arg2[32];
