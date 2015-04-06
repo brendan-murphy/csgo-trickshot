@@ -12,16 +12,21 @@ public Plugin:myinfo = {
 }
 
 int currentThrower = 0;
-float roundTime = 0.0;
+int roundCount = 0;
+Handle g_hCvarRestartGame;
+bool warmupRound = true;
+Handle roundEndTimeHandle;
 
 public OnPluginStart(){
 
-	RegAdminCmd("sm_myslap", Command_MySlap, ADMFLAG_SLAY);
 	RegAdminCmd("send_to_team",Command_SendToTeam, ADMFLAG_SLAY);
 
-	HookEvent("round_prestart", Event_OnRoundPreStart);
-	HookEvent("round_poststart", Event_OnRoundPostStart);
-	HookEvent("round_end", Event_OnRoundEnd);
+	HookEvent("round_prestart", Hook_OnRoundPreStart);
+	HookEvent("round_poststart", Hook_OnRoundPostStart);
+	HookEvent("round_end", Hook_OnRoundEnd);
+
+	g_hCvarRestartGame = FindConVar("mp_restartgame");
+	HookConVarChange(g_hCvarRestartGame, CvarChange_RestartGame);
 
 }
 
@@ -30,7 +35,19 @@ public OnPluginEnd(){
 }
 
 public OnClientConnected(client){
+	PrintToChatAll("%d", GetClientCount());
+	if(GetClientCount() > 0 && warmupRound){
+		//CreateTimer(2.5,EndWarmupHelper);
+		PrintToChatAll("WARMUP ENDED");
+		ServerCommand("mp_warmup_end");
+		warmupRound = false;
+	}
+}
 
+public Action EndWarmupHelper(Handle timer){
+	PrintToChatAll("WARMUP ENDED");
+	ServerCommand("mp_warmup_end");
+	warmupRound = false;
 }
 
 public OnClientDisconnect_Post(client){
@@ -40,14 +57,28 @@ public OnClientDisconnect_Post(client){
 }
 
 public OnMapStart(){
-
+	roundCount = 0;
+	warmupRound = true;
 }
 
 public OnMapEnd(){
 
 }
 
-public Action Event_OnRoundPreStart(Handle event, const char[] name, bool dontBroadcast){
+public Hook_OnRoundPreStart(Handle event, const char[] name, bool dontBroadcast){
+
+	if(warmupRound){
+		//warmupRound = false;
+		return;
+	}
+
+	roundCount++;
+
+ 	if (roundCount == 1) // First round, game just started
+    {
+        currentThrower = 0;
+    }
+
 	//put all players on T side
 	for (int i = 1; i < GetClientCount() + 1; i++){
 		CS_SwitchTeam(i, 2);
@@ -62,24 +93,34 @@ public Action Event_OnRoundPreStart(Handle event, const char[] name, bool dontBr
 	CS_SwitchTeam(currentThrower, 3);
 
 	// hook hoop trigger event
-	new String:buffer[60], ent = -1;
+	new String:buffer[60];
+	int ent = -1;
 	while((ent = FindEntityByClassname(ent, "trigger_multiple")) != -1){
 
 		GetEntPropString(ent, Prop_Data, "m_iName", buffer, sizeof(buffer));
 		if(StrContains(buffer, "hoop_trigger", false)){
-			HookSingleEntityOutput(ent, "OnTrigger", HoopOnTrigger, false);
+			HookSingleEntityOutput(ent, "OnTrigger", EntityOutput:HoopOnTrigger);
 		}
 
 	}
 }
 
-public Action Event_OnRoundPostStart(Handle event, const char[] name, bool dontBroadcast){
-	CreateTimer(GetConVarFloat(FindConVar("mp_roundtime_defuse")) * 60, RoundTimeExpire);
+public Hook_OnRoundPostStart(Handle event, const char[] name, bool dontBroadcast){
+	if(roundCount > 0){ // Dont do it on warmup
+	roundEndTimeHandle = CreateTimer((GetConVarFloat(FindConVar("mp_roundtime_defuse")) * 60.0), RoundTimeExpire);
+	PrintToChatAll("Round end timer started");
+	}
 }
 
-public Action Event_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast){
-	
+public Hook_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast){
+	if (roundEndTimeHandle != INVALID_HANDLE)
+	{
+		KillTimer(roundEndTimeHandle);
+		PrintToChatAll("Round end timer ended");
+		roundEndTimeHandle = INVALID_HANDLE;
+	}
 }
+
 
 public Action Command_SendToTeam(client, args){
 	new String:name[32];
@@ -112,30 +153,23 @@ public HoopOnTrigger(const String:output[], caller, activator, float delay){
 	CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_CTWin);
 }
 
-public RoundTimeExpire(){
-
+public Action RoundTimeExpire(Handle timer){
+	// Time has run out so the T side wins
+	CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_TerroristsEscaped);
 }
 
+public CvarChange_RestartGame(Handle:convar, const String:oldValue[], const String:newValue[])// If mp_restartgame is changed, roundCount will be 0
+{
+    if (StringToInt(newValue) > 0)
+    {
+        roundCount = 0;
 
-public Action Command_MySlap(client, args){
-	new String:arg1[32], String:arg2[32];
-	new damage;
-
-	//Get second argument
-	GetCmdArg(1, arg1, sizeof(arg1));
-
-	if( args >= 2 && GetCmdArg(2, arg2, sizeof(arg2)))
-		damage = StringToInt(arg2);
-
-	new target = FindTarget(client, arg1);
-	if(target == -1)
-		return Plugin_Handled; // FindTarget() will print out the error
-
-	SlapPlayer(target, damage);
-
-	new String:name[MAX_NAME_LENGTH];
-	GetClientName(target, name, sizeof(name));
-	ReplyToCommand(client, "[SM] You slapped %s for %d damage!", name, damage);
-
-	return Plugin_Handled;
+    }
+    if (roundEndTimeHandle != INVALID_HANDLE)
+	{
+		KillTimer(roundEndTimeHandle);
+		roundEndTimeHandle = INVALID_HANDLE;
+		PrintToChatAll("Round end timer ended");
+	}
 }
+
