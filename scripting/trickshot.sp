@@ -1,6 +1,7 @@
 #include <sourcemod>
 #include <sdktools>
 #include <cstrike>
+#include <smlib>
 
  //Plugin public information.
 public Plugin:myinfo = {
@@ -16,6 +17,7 @@ int roundCount = 0;
 Handle g_hCvarRestartGame;
 bool warmupRound = true;
 Handle roundEndTimeHandle;
+bool madeShot = false;
 
 public OnPluginStart(){
 
@@ -27,7 +29,6 @@ public OnPluginStart(){
 
 	g_hCvarRestartGame = FindConVar("mp_restartgame");
 	HookConVarChange(g_hCvarRestartGame, CvarChange_RestartGame);
-
 }
 
 public OnPluginEnd(){
@@ -84,32 +85,32 @@ public Hook_OnRoundPreStart(Handle event, const char[] name, bool dontBroadcast)
 		CS_SwitchTeam(i, 2);
 	}
 
-	PrintToChatAll("%d", currentThrower);
 	currentThrower = (currentThrower + 1) % (GetClientCount() + 1);
 
 	if(currentThrower == 0)
 		currentThrower = 1;
 
 	CS_SwitchTeam(currentThrower, 3);
-
-	// hook hoop trigger event
-	new String:buffer[60];
-	int ent = -1;
-	while((ent = FindEntityByClassname(ent, "trigger_multiple")) != -1){
-
-		GetEntPropString(ent, Prop_Data, "m_iName", buffer, sizeof(buffer));
-		if(StrContains(buffer, "hoop_trigger", false)){
-			HookSingleEntityOutput(ent, "OnTrigger", EntityOutput:HoopOnTrigger);
-		}
-
-	}
+	PrintToChatAll("%d current thrower ", currentThrower);
 }
 
 public Hook_OnRoundPostStart(Handle event, const char[] name, bool dontBroadcast){
-	if(roundCount > 0){ // Dont do it on warmup
-	roundEndTimeHandle = CreateTimer((GetConVarFloat(FindConVar("mp_roundtime_defuse")) * 60.0), RoundTimeExpire);
+	if(roundCount < 1)// Dont do it on warmup
+		return;
+	roundEndTimeHandle = CreateTimer((GetConVarFloat(FindConVar("mp_roundtime")) * 60.0), RoundTimeExpire);
 	PrintToChatAll("Round end timer started");
+
+	for(int i = 1; i < GetClientCount() + 1; i++){
+		Client_RemoveAllWeapons(i);
+		//GivePlayerItem(i, "weapon_knife");
 	}
+
+	for(int i = 0; i < 4; i++){
+		GivePlayerItem(currentThrower, "weapon_hegrenade");
+	}
+
+	HookEntityOutput("trigger_multiple", "OnTrigger", HoopOnTrigger);
+
 }
 
 public Hook_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast){
@@ -119,6 +120,9 @@ public Hook_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast){
 		PrintToChatAll("Round end timer ended");
 		roundEndTimeHandle = INVALID_HANDLE;
 	}
+	UnhookEntityOutput("trigger_multiple","OnTrigger",HoopOnTrigger);
+	madeShot = false;
+
 }
 
 
@@ -149,13 +153,18 @@ public Action Command_SendToTeam(client, args){
 }
 
 public HoopOnTrigger(const String:output[], caller, activator, float delay){
+	if(warmupRound || madeShot)
+		return;
+
 	PrintToServer("output %s, caller %i, activator %i, delay %0.1f", output, caller, activator, delay);
+	PrintToChatAll("ONTRIGGER");
+	madeShot = true;
 	CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_CTWin);
 }
 
 public Action RoundTimeExpire(Handle timer){
 	// Time has run out so the T side wins
-	CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_TerroristsEscaped);
+	CS_TerminateRound(/*GetConVarFloat(FindConVar("mp_round_restart_delay"))*/ 2.0, CSRoundEnd_TerroristsEscaped);
 }
 
 public CvarChange_RestartGame(Handle:convar, const String:oldValue[], const String:newValue[])// If mp_restartgame is changed, roundCount will be 0
