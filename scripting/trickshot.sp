@@ -12,12 +12,18 @@ public Plugin:myinfo = {
 	url = ""
 }
 
+#define Slot_HEgrenade 11
+
 int currentThrower = 0;
 int roundCount = 0;
 Handle g_hCvarRestartGame;
 bool warmupRound = true;
 Handle roundEndTimeHandle;
-bool madeShot = false;
+int madeShots = 0;
+
+// Handles to array
+Handle tSpawns = INVALID_HANDLE;
+Handle ctSpawns = INVALID_HANDLE;
 
 public OnPluginStart(){
 
@@ -26,9 +32,19 @@ public OnPluginStart(){
 	HookEvent("round_prestart", Hook_OnRoundPreStart);
 	HookEvent("round_poststart", Hook_OnRoundPostStart);
 	HookEvent("round_end", Hook_OnRoundEnd);
+	HookEvent("player_spawn",Hook_PlayerSpawn);
 
 	g_hCvarRestartGame = FindConVar("mp_restartgame");
 	HookConVarChange(g_hCvarRestartGame, CvarChange_RestartGame);
+}
+
+public Hook_PlayerSpawn(Handle:event,const String:name[],bool:dontBroadcast){
+	if(GetClientCount() > 0 && warmupRound){
+		//CreateTimer(2.5,EndWarmupHelper);
+		PrintToChatAll("WARMUP ENDED");
+		ServerCommand("mp_warmup_end");
+		warmupRound = false;
+	}
 }
 
 public OnPluginEnd(){
@@ -36,13 +52,7 @@ public OnPluginEnd(){
 }
 
 public OnClientConnected(client){
-	PrintToChatAll("%d", GetClientCount());
-	if(GetClientCount() > 0 && warmupRound){
-		//CreateTimer(2.5,EndWarmupHelper);
-		PrintToChatAll("WARMUP ENDED");
-		ServerCommand("mp_warmup_end");
-		warmupRound = false;
-	}
+	
 }
 
 public Action EndWarmupHelper(Handle timer){
@@ -121,7 +131,7 @@ public Hook_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast){
 		roundEndTimeHandle = INVALID_HANDLE;
 	}
 	UnhookEntityOutput("trigger_multiple","OnTrigger",HoopOnTrigger);
-	madeShot = false;
+	madeShots = 0;
 
 }
 
@@ -153,24 +163,32 @@ public Action Command_SendToTeam(client, args){
 }
 
 public HoopOnTrigger(const String:output[], caller, activator, float delay){
-	if(warmupRound || madeShot)
+	if(warmupRound)
 		return;
 
-	PrintToServer("output %s, caller %i, activator %i, delay %0.1f", output, caller, activator, delay);
-	PrintToChatAll("ONTRIGGER");
-	madeShot = true;
-	CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_CTWin);
+	PrintToChatAll("Hoop triggered!");
+	madeShots++;
+
+	PrintToChatAll("%d", GetWeaponAmmo(currentThrower, Slot_HEgrenade))
+	if(GetWeaponAmmo(currentThrower, Slot_HEgrenade) == 0){
+		if(madeShots > 0)
+			CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_CTWin);
+		else
+			CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_TerroristsEscaped);
+	}
+
 }
 
 public Action RoundTimeExpire(Handle timer){
 	// Time has run out so the T side wins
-	CS_TerminateRound(/*GetConVarFloat(FindConVar("mp_round_restart_delay"))*/ 2.0, CSRoundEnd_TerroristsEscaped);
+	CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_TerroristsEscaped);
 }
 
-public CvarChange_RestartGame(Handle:convar, const String:oldValue[], const String:newValue[])// If mp_restartgame is changed, roundCount will be 0
+public CvarChange_RestartGame(Handle:convar, const String:oldValue[], const String:newValue[])
 {
     if (StringToInt(newValue) > 0)
     {
+    	// If mp_restartgame is changed, roundCount will be 0
         roundCount = 0;
 
     }
@@ -182,3 +200,14 @@ public CvarChange_RestartGame(Handle:convar, const String:oldValue[], const Stri
 	}
 }
 
+public GetWeaponAmmo(client, slot)
+{
+    new ammoOffset = FindSendPropInfo("CCSPlayer", "m_iAmmo");
+    return GetEntData(client, ammoOffset+(slot*4));
+}
+
+public SetWeaponAmmo(client, slot, amount)
+{
+    new ammoOffset = FindSendPropInfo("CCSPlayer", "m_iAmmo");
+    return SetEntData(client, ammoOffset+(slot*4), amount);
+}
