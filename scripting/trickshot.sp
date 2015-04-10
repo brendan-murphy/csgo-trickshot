@@ -3,6 +3,7 @@
 #include <cstrike>
 #include <smlib>
 
+
  //Plugin public information.
 public Plugin:myinfo = {
 	name = "Test Plugin",
@@ -13,6 +14,8 @@ public Plugin:myinfo = {
 }
 
 #define Slot_HEgrenade 11
+
+ConVar g_cvSpawnType;
 
 int currentThrower = 0;
 int roundCount = 0;
@@ -25,6 +28,8 @@ int madeShots = 0;
 Handle tSpawns = INVALID_HANDLE;
 Handle ctSpawns = INVALID_HANDLE;
 
+#include <spawn.sp>
+
 public OnPluginStart(){
 
 	RegAdminCmd("send_to_team",Command_SendToTeam, ADMFLAG_SLAY);
@@ -36,10 +41,12 @@ public OnPluginStart(){
 
 	g_hCvarRestartGame = FindConVar("mp_restartgame");
 	HookConVarChange(g_hCvarRestartGame, CvarChange_RestartGame);
+
+	g_cvSpawnType = CreateConVar("spawn_type", "1", "Sets if there is on T spawn location or multiple");
 }
 
 public Hook_PlayerSpawn(Handle:event,const String:name[],bool:dontBroadcast){
-	if(GetClientCount() > 0 && warmupRound){
+	if(GetClientCount() > 1 && warmupRound){
 		//CreateTimer(2.5,EndWarmupHelper);
 		PrintToChatAll("WARMUP ENDED");
 		ServerCommand("mp_warmup_end");
@@ -48,6 +55,7 @@ public Hook_PlayerSpawn(Handle:event,const String:name[],bool:dontBroadcast){
 }
 
 public OnPluginEnd(){
+
 
 }
 
@@ -70,6 +78,7 @@ public OnClientDisconnect_Post(client){
 public OnMapStart(){
 	roundCount = 0;
 	warmupRound = true;
+	//FindSpawns();
 }
 
 public OnMapEnd(){
@@ -112,7 +121,7 @@ public Hook_OnRoundPostStart(Handle event, const char[] name, bool dontBroadcast
 
 	for(int i = 1; i < GetClientCount() + 1; i++){
 		Client_RemoveAllWeapons(i);
-		//GivePlayerItem(i, "weapon_knife");
+		GivePlayerItem(i, "weapon_knife");
 	}
 
 	for(int i = 0; i < 4; i++){
@@ -163,14 +172,18 @@ public Action Command_SendToTeam(client, args){
 }
 
 public HoopOnTrigger(const String:output[], caller, activator, float delay){
-	if(warmupRound)
+	new String:name[256];
+	GetEntityClassname(activator, name, 256);
+	
+	if(warmupRound || !StrEqual(name,"hegrenade_projectile"))
 		return;
 
 	PrintToChatAll("Hoop triggered!");
+	FindSpawns();
+
 	madeShots++;
 
-	PrintToChatAll("%d", GetWeaponAmmo(currentThrower, Slot_HEgrenade))
-	if(GetWeaponAmmo(currentThrower, Slot_HEgrenade) == 0){
+	if(Client_GetWeaponPlayerAmmo(currentThrower, "weapon_hegrenade") == 0){
 		if(madeShots > 0)
 			CS_TerminateRound(GetConVarFloat(FindConVar("mp_round_restart_delay")), CSRoundEnd_CTWin);
 		else

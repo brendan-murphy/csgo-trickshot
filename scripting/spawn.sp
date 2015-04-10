@@ -21,6 +21,13 @@ public void FindSpawns(){
 
 				// store position of spawn point in spawnVector 
 				GetEntPropVector(i, Prop_Data, "m_vecOrigin", spawnVector);
+
+				//Handle temp = CreateArray(3);
+				//PushArrayArray(temp, spawnVector);
+				//PushArrayCell(tSpawns, temp);
+
+				PushArrayArray(tSpawns, spawnVector);
+				SetArrayArray(tSpawns, GetArraySize(tSpawns) -1, spawnVector);
 			}
 
 			// check if CT spawn point
@@ -31,11 +38,10 @@ public void FindSpawns(){
 
 		}
 	}
-}
-
-public void AddSpawn(float spawnV[3], Handle spawnList){
-	
-	for (int i = 0; i < GetArraySize(spawnList); i++) {
-
+	for(int i = 0; i < GetArraySize(tSpawns); i++){
+		float tempVector[3];
+		GetArrayArray(tSpawns, i, tempVector);
+		PrintToChatAll("%f %f %f", tempVector[0], tempVector[1], tempVector[2]);
 	}
 }
+
